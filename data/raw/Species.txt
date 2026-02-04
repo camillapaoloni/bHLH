@@ -1,0 +1,23 @@
+Homo sapiens
+Drosophila melanogaster
+Helobdella robusta
+Bos taurus
+Canis lupus familiaris
+Danio rerio
+Gallus gallus
+Gorilla gorilla
+Lepisosteus oculatus 
+Macaca mulatta
+Monodelphis domestica
+Mus musculus
+Oryzias latipes
+Pan troglodytes
+Rattus norvegicus
+Xenopus tropicalis
+Anolis carolinensis
+Anopheles gambiae
+Caenorhabditis elegans
+Tribolium castaneum
+Saccharomyces cerevisiae
+Schizosaccharomyces pombe
+Neurospora crassa

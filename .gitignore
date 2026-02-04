@@ -1,0 +1,8 @@
+.DS_Store
+.Rhistory
+.Rapp.history
+.RData
+Rplots.pdf
+outputs/
+data/intermediate/
+data/raw/Zoonomia_protaln/*.fa
