@@ -65,10 +65,18 @@ Note: very large files `data/raw/Zoonomia_protaln/*.fa` are excluded from Git (G
 - `notebooks/Ortho_heatmap.ipynb` → input `data/intermediate/orthologs/annotated_bHLH_merged_data.csv`, `data/raw/TOGA_orthologs/*.tsv` → outputs:
   - `data/intermediate/orthologs/annotated_bHLH_merged_data_with_gene_names.csv` (Ensembl REST)
   - `data/intermediate/orthologs/TOGA_orthologs_allSpecies.csv`
-- `scripts/ortho_bHLH.R` → input `data/intermediate/orthologs/annotated_bHLH_merged_data_with_gene_names.csv` → outputs `outputs/orthogroups/Orthogroup_*.png` and `outputs/orthogroups/species_group_*.png`
+- `notebooks/zoonomia_bHLH_mapping.ipynb` → input `data/raw/Zoonomia_protaln/*.fa`, `data/intermediate/bHLH_StartEnd_withISO.csv`, `data/intermediate/orthologs/TOGA_orthologs_allSpecies.csv` → output `data/intermediate/zoonomia/Zoonomia_Start_End_final.csv` (+ validation table `outputs/reports/report_comparison.csv`)
+- `scripts/prepare_zoonomia_relpos.py` → input `data/intermediate/zoonomia/Zoonomia_Start_End_final.csv` (+ local alignments metadata) → output `data/intermediate/zoonomia/Zoonomia_Start_End_final_with_relpos.csv`
+- `scripts/run_orthogroup_domain_plots.sh` (recommended entry point) → inputs:
+  - `data/intermediate/orthologs/annotated_bHLH_merged_data_with_gene_names.csv`
+  - optional `data/intermediate/zoonomia/Zoonomia_Start_End_final_with_relpos.csv` (generated if missing and `data/intermediate/zoonomia/Zoonomia_Start_End_final.csv` exists)
+  - `data/raw/LS_classes.csv`
+  → outputs:
+  - Ensembl-only overview SVGs: `outputs/orthogroups/domain_positions_ensembl/orthogroup_<HGNC>.svg`
+  - Mammals-only integrated SVGs (Ensembl + Zoonomia): `outputs/orthogroups/domain_positions_mammals_integrated/orthogroup_<HGNC>.svg`
+  - Note: legacy `outputs/orthogroups/domain_positions/` (if present) is deprecated.
 - `notebooks/Random_Orthoplots.ipynb` → input `data/intermediate/orthologs/annotated_bHLH_merged_data.csv` → output `outputs/figures/a3_heatmap.svg`
 - `scripts/Parallel_coordinates.r` → input `data/intermediate/orthologs/annotated_bHLH_merged_data_with_gene_names.csv` → output interactive plot (not saved)
-- `notebooks/zoonomia_bHLH_mapping.ipynb` → input `data/raw/Zoonomia_protaln/*.fa`, `data/intermediate/bHLH_StartEnd_withISO.csv`, `data/intermediate/orthologs/TOGA_orthologs_allSpecies.csv` → outputs `data/intermediate/zoonomia/Zoonomia_Start_End_final.csv`, `outputs/reports/report_comparison.csv`
 
 ## 9) Phylogenetic tree (not used in the final project)
 - `scripts/Tree.R` → input `data/raw/Tree23sp.newick` → output `outputs/figures/phylo23.svg` (and/or `outputs/figures/phylo23.png`)
