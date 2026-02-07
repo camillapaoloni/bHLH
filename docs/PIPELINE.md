@@ -48,12 +48,14 @@ Note: very large files `data/raw/Zoonomia_protaln/*.fa` are excluded from Git (G
 
 ## 7) RBP / 3'UTR
 - `notebooks/3'UTR.ipynb` → input `data/raw/RBP_3UTR_data/3UTR_merged_clean.csv`, `data/raw/LS_classes.csv` → output `data/intermediate/rbp/Violin_plot_3UTR.csv`, `data/intermediate/rbp/RBP_binary_matrix.csv`
-- `scripts/violin_length3utr.r` → input `data/intermediate/rbp/Violin_plot_3UTR.csv` → output `outputs/rbp/UTR_length_boxplots.svg`
-- `scripts/RBPvs3UTR_scatter.r` → input `data/intermediate/rbp/RBP_binary_matrix.csv`, `data/intermediate/rbp/Violin_plot_3UTR.csv` → outputs `outputs/rbp/RBPvs3UTR_scatter.svg`, `outputs/rbp/RBPvsTFs_histogram.svg`
-- `scripts/Hierarch_gower.r` → input `data/intermediate/rbp/RBP_binary_matrix.csv` → output `outputs/rbp/hierarchical_clusters.svg`
-- `scripts/K-means_RBP.r` → input `data/intermediate/rbp/RBP_binary_matrix.csv` → output `outputs/rbp/k_means_clusters.svg`
-- `scripts/K-modes.r` → input `data/intermediate/rbp/RBP_binary_matrix.csv`, `data/raw/LS_classes.csv` → output `outputs/rbp/k_modes_clusters.svg`
-- `scripts/dendrograms_UTR.r` → input `data/intermediate/rbp/RBP_binary_matrix.csv`, `data/raw/LS_classes.csv` → output `outputs/rbp/dendrograms_linkage_methods.svg`
+- `scripts/rbp/utr_length_boxplots.R` → input `data/intermediate/rbp/Violin_plot_3UTR.csv` → output `outputs/rbp/figures/utr_length_boxplots.svg`
+- `scripts/rbp/rbp_vs_utr_scatter_and_hist.R` → input `data/intermediate/rbp/RBP_binary_matrix.csv`, `data/intermediate/rbp/Violin_plot_3UTR.csv` → outputs:
+  - `outputs/rbp/figures/rbp_vs_utr_scatter.svg`
+  - `outputs/rbp/figures/rbp_bound_tfs_per_rbp_histogram.svg`
+- `scripts/rbp/rbp_tsne_hclust_clusters.R` → input `data/intermediate/rbp/RBP_binary_matrix.csv`, `data/raw/LS_classes.csv` → output `outputs/rbp/figures/rbp_tsne_hclust_clusters.svg`
+- `scripts/rbp/rbp_tsne_pam_clusters.R` → input `data/intermediate/rbp/RBP_binary_matrix.csv`, `data/raw/LS_classes.csv` → output `outputs/rbp/figures/rbp_tsne_pam_clusters.svg`
+- `scripts/rbp/rbp_tsne_kmodes_clusters.R` → input `data/intermediate/rbp/RBP_binary_matrix.csv`, `data/raw/LS_classes.csv` → output `outputs/rbp/figures/rbp_tsne_kmodes_clusters.svg`
+- `scripts/rbp/rbp_dendrogram_linkage_methods.R` → input `data/intermediate/rbp/RBP_binary_matrix.csv`, `data/raw/LS_classes.csv` → output `outputs/rbp/figures/rbp_dendrograms_linkage_methods.svg`
 
 ## 8) Ortho / TOGA / Zoonomia
 - `notebooks/Orthologs_retrival.ipynb` → input `data/intermediate/Metadata_CSVs/Transcript_Attributes_cleaned.csv`, `data/intermediate/Metadata_CSVs/InterPro_Domains_cleaned.csv`, `data/intermediate/table_input.csv`, `data/intermediate/interpro/interpro_output.tsv` → outputs:
@@ -76,7 +78,7 @@ Note: very large files `data/raw/Zoonomia_protaln/*.fa` are excluded from Git (G
   - Mammals-only integrated SVGs (Ensembl + Zoonomia): `outputs/orthogroups/domain_positions_mammals_integrated/orthogroup_<HGNC>.svg`
   - Note: legacy `outputs/orthogroups/domain_positions/` (if present) is deprecated.
 - `notebooks/Random_Orthoplots.ipynb` → input `data/intermediate/orthologs/annotated_bHLH_merged_data.csv` → output `outputs/figures/a3_heatmap.svg`
-- `scripts/Parallel_coordinates.r` → input `data/intermediate/orthologs/annotated_bHLH_merged_data_with_gene_names.csv` → output interactive plot (not saved)
+- `scripts/Parallel_coordinates.r` → input `data/intermediate/orthologs/annotated_bHLH_merged_data_with_gene_names.csv`, `data/raw/LS_classes.csv` → output `outputs/orthologs/figures/parallel_coordinates_midpoints.svg`
 
 ## 9) Phylogenetic tree (not used in the final project)
 - `scripts/Tree.R` → input `data/raw/Tree23sp.newick` → output `outputs/figures/phylo23.svg` (and/or `outputs/figures/phylo23.png`)
