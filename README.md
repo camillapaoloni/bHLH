@@ -13,7 +13,7 @@ This README is aligned with the thesis *Materials and Methods* section (Chapter 
 
 - Scripts use paths relative to the project root. If running from a different directory, set `BHLH_PROJECT_ROOT=/path/to/repo`.
 - `outputs/` and `data/intermediate/` are intentionally **not tracked** by Git (figures and intermediate tables are reproducible).
-- Very large raw FASTA files `data/raw/Zoonomia_protaln/*.fa` are excluded from Git (GitHub 100 MB limit). Keep them locally or store them externally (or via Git LFS).
+- Very large raw FASTA files `data/raw/Zoonomia_protaln/*.fa` are excluded from Git (GitHub 100 MB limit). Keep them locally or store them externally (or via Git LFS). This data can be downloaded at https://zoonomiaproject.org/the-data/
 
 ## Quick Re-Runs (Safe / No Re-Download)
 
@@ -35,9 +35,9 @@ Rscript scripts/Parallel_coordinates.r
 
 Some notebooks and scripts rely on Ensembl REST/BioMart calls. For fully offline re-runs, prefer scripts that consume already-generated tables under `data/intermediate/`.
 
-## Data Sources (High-Level)
+## Data Sources 
 
-- **Human TF reference list**: Lambert et al. (2018) Human TF catalogue; bHLH subset exported as `data/raw/Lambert_bHLH.csv`.
+- **Human TF reference list**: Lambert et al. (2018) Human TF catalogue (https://humantfs.ccbr.utoronto.ca/) ; bHLH subset exported as `data/raw/Lambert_bHLH.csv`.
 - **bHLH class annotation**: Ledent/Simionato/Atchley-style classification in `data/raw/LS_classes.csv` (A–E + NC).
 - **Ensembl metadata**: BioMart tables (Ensembl Genes 114 / GRCh38.p14 used in the thesis) generated locally under `data/intermediate/Metadata_CSVs/`.
 - **Domain annotation**: InterPro entry **IPR011598** (HLH DNA-binding; corresponds to Pfam PF00010).
