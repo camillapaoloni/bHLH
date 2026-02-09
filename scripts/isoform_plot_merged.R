@@ -5,6 +5,7 @@ library(viridis)
 # === File paths: edit if needed ===
 project_root <- Sys.getenv("BHLH_PROJECT_ROOT", unset = ".")
 p <- function(...) file.path(project_root, ...)
+source(file.path(project_root, "scripts", "lib", "bhlh_utils.R"))
 normalize_classes <- function(df) {
   if ("Ledent2002+Simionato2007" %in% names(df)) {
     df <- dplyr::rename(df, Ledent2002.Simionato2007 = `Ledent2002+Simionato2007`)
@@ -18,7 +19,7 @@ normalize_classes <- function(df) {
 }
 
 
-path_df <- p("data", "intermediate", "bHLH_StartEnd_withISO.csv")
+path_df <- intermediate_csv_path("bHLH_StartEnd_withISO.csv")
 path_df_classes <- p("data", "raw", "LS_classes.csv")
 path_df_dym <- p("data", "raw", "Lambert_bHLH.csv")
 

@@ -10,6 +10,16 @@ suppressPackageStartupMessages({
 project_root <- Sys.getenv("BHLH_PROJECT_ROOT", unset = ".")
 p <- function(...) file.path(project_root, ...)
 
+intermediate_csv_path <- function(filename) {
+  # Some parts of this project store core intermediate CSVs under data/intermediate/CSVs/.
+  # For backward compatibility, we also accept the historical location data/intermediate/.
+  cand1 <- p("data", "intermediate", "CSVs", filename)
+  cand2 <- p("data", "intermediate", filename)
+  if (file.exists(cand1)) return(cand1)
+  if (file.exists(cand2)) return(cand2)
+  stop("Missing intermediate CSV (checked both locations): ", filename, call. = FALSE)
+}
+
 normalize_ls_classes <- function(df) {
   # Normalize the LS class table column names across the different variants found in the project.
   if ("Ledent2002+Simionato2007" %in% names(df)) {

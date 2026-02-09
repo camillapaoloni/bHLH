@@ -3,6 +3,7 @@ library(tidyverse)
 library(patchwork)
 project_root <- Sys.getenv("BHLH_PROJECT_ROOT", unset = ".")
 p <- function(...) file.path(project_root, ...)
+source(file.path(project_root, "scripts", "lib", "bhlh_utils.R"))
 normalize_classes <- function(df) {
   if ("Ledent2002+Simionato2007" %in% names(df)) {
     df <- dplyr::rename(df, Ledent2002.Simionato2007 = `Ledent2002+Simionato2007`)
@@ -22,7 +23,7 @@ output_dir <- p("outputs", "figures")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Load data
-df <- read.csv(p("data", "intermediate", "table_input.csv"))
+df <- read.csv(intermediate_csv_path("table_input.csv"))
 df_classes <- read.csv(p("data", "raw", "LS_classes.csv"))
 df_classes <- normalize_classes(df_classes)
 

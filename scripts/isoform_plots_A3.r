@@ -23,10 +23,11 @@ normalize_classes <- function(df) {
 output_dir <- p("outputs", "figures")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
+source(file.path(project_root, "scripts", "lib", "bhlh_utils.R"))
+
 # Read data files
-df <- read.csv(p("data", "intermediate", "bHLH_StartEnd_withISO.csv")) # nolint
-df_classes <- read.csv(p("data", "raw", "LS_classes.csv")) # nolint
-df_classes <- normalize_classes(df_classes)
+df <- read.csv(intermediate_csv_path("bHLH_StartEnd_withISO.csv")) # nolint
+df_classes <- read_ls_classes() # nolint
 df_dym <- read.csv(p("data", "raw", "Lambert_bHLH.csv")) # nolint
 df_dym <- df_dym %>% select(HGNC.symbol, Binding.mode) %>% distinct()
 

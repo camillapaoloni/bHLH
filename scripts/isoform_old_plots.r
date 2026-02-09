@@ -5,6 +5,7 @@ library(patchwork)
 library(tidyr)
 project_root <- Sys.getenv("BHLH_PROJECT_ROOT", unset = ".")
 p <- function(...) file.path(project_root, ...)
+source(file.path(project_root, "scripts", "lib", "bhlh_utils.R"))
 normalize_classes <- function(df) {
   if ("Ledent2002+Simionato2007" %in% names(df)) {
     df <- dplyr::rename(df, Ledent2002.Simionato2007 = `Ledent2002+Simionato2007`)
@@ -24,7 +25,7 @@ output_dir <- p("outputs", "figures", "plots")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Read data files
-df <- read.csv(p("data", "intermediate", "bHLH_StartEnd_withISO.csv")) # nolint
+df <- read.csv(intermediate_csv_path("bHLH_StartEnd_withISO.csv")) # nolint
 df_classes <- read.csv(p("data", "raw", "LS_classes.csv")) # nolint
 df_classes <- normalize_classes(df_classes)
 df_dym <- read.csv(p("data", "raw", "Lambert_bHLH.csv")) # nolint

@@ -2,11 +2,12 @@ library(tidyverse)
 library(patchwork)
 project_root <- Sys.getenv("BHLH_PROJECT_ROOT", unset = ".")
 p <- function(...) file.path(project_root, ...)
+source(file.path(project_root, "scripts", "lib", "bhlh_utils.R"))
 
 
 # ---------- paths ----------
 # Prefer data/intermediate/table_input_PAS.csv, fallback to data/intermediate/table_input_withPAS.csv if missing.
-input_table <- p("data", "intermediate", "table_input_PAS.csv")
+input_table <- intermediate_csv_path("table_input_PAS.csv")
 if (!file.exists(input_table) && file.exists(p("data", "intermediate", "table_input_withPAS.csv"))) {
   input_table <- p("data", "intermediate", "table_input_withPAS.csv")
 }
