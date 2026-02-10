@@ -130,6 +130,9 @@ In this repository:
 - canonical isoform plots are the A3 exports:
   - `scripts/isoform_plots_A3.r` (class-specific panels)
   - `scripts/isoform_plot_merged_improved.R` (single merged plot)
+- optional (kept alongside the canonical version): A3 isoform plots **with PAS overlay** (InterPro IPR000014)
+  - `scripts/isoform_plots_A3_with_PAS.r` -> `outputs/figures/bHLH_human_transcript_class*_A3_with_PAS.svg`
+  - the non-PAS plots remain available as `outputs/figures/bHLH_human_transcript_class*_A3.svg`
 
 ### 3.3 Relative position of the bHLH domain across the phylogenetic tree
 

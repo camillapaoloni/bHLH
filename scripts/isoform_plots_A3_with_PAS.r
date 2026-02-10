@@ -1,199 +1,251 @@
 #!/usr/bin/env Rscript
 
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(ggplot2)
-  library(tidyr)
-  library(viridis)
-})
-
-# Human isoform plots with PAS overlay
-# ===================================
+# Isoform plots (A3 portrait) with PAS overlay
+# ===========================================
 #
-# This script generates class-specific isoform plots (A3 portrait) showing:
-# - a 0-1 baseline representing the full protein length for each transcript,
-# - the bHLH domain (IPR011598) in the class color,
-# - the PAS domain (IPR000014), if present, overlaid in orange.
+# This script mirrors the style of `scripts/isoform_plots_A3.r` (stacked "pre / bHLH / post"
+# bars scaled to [0, 1] per transcript), and overlays PAS domains when present.
+#
+# bHLH domain:
+# - InterPro: IPR011598 (HLH DNA-binding)
+#
+# PAS domain:
+# - InterPro: IPR000014
+# - Displayed as an orange segment on top of the bHLH bar (only when present).
 #
 # Inputs:
-# - data/intermediate/CSVs/bHLH_StartEnd_withISO.csv (or legacy data/intermediate/...)
+# - data/intermediate/CSVs/bHLH_StartEnd_withISO.csv (or legacy data/intermediate/)
 # - data/intermediate/Metadata_CSVs/InterPro_Domains_cleaned.csv
 # - data/raw/LS_classes.csv
 #
 # Outputs:
 # - outputs/figures/bHLH_human_transcript_class*_A3_with_PAS.svg
 
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(tidyverse)
+  library(tidyr)
+})
+
 project_root <- Sys.getenv("BHLH_PROJECT_ROOT", unset = ".")
-source(file.path(project_root, "scripts", "lib", "bhlh_utils.R"))
+p <- function(...) file.path(project_root, ...)
 
-require_pkgs(c("dplyr", "ggplot2", "tidyr", "viridis"))
+source(p("scripts", "lib", "bhlh_utils.R"))
 
-out_dir <- p("outputs", "figures")
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+# Output directory
+output_dir <- p("outputs", "figures")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-in_iso <- intermediate_csv_path("bHLH_StartEnd_withISO.csv")
+# Read inputs (isoforms + classes)
+df <- read.csv(intermediate_csv_path("bHLH_StartEnd_withISO.csv")) # nolint
+df_classes <- read_ls_classes() # nolint
+
+df_classes$Ledent2002.Simionato2007 <- ifelse(
+  is.na(df_classes$Ledent2002.Simionato2007) | df_classes$Ledent2002.Simionato2007 == "",
+  "NC",
+  df_classes$Ledent2002.Simionato2007
+)
+
+gene_class_map <- df_classes %>%
+  dplyr::select(HGNC.symbol, Ledent2002.Simionato2007) %>%
+  distinct()
+
+# Build stacked bins: pre / class / post (sizes are in amino acids).
+split(df, paste(df$HGNC.symbol, df$ensembl_transcript_id)) %>%
+  lapply(function(tdf) {
+    gene_class <- plyr::mapvalues(
+      x = tdf$HGNC.symbol,
+      from = df_classes$HGNC.symbol,
+      to = df_classes$Ledent2002.Simionato2007,
+      warn_missing = FALSE
+    )
+
+    data.frame(
+      HGNC.symbol = tdf$HGNC.symbol,
+      ensembl_transcript_id = tdf$ensembl_transcript_id,
+      bin = c("pre", gene_class, "post"),
+      size = c(
+        tdf$interpro_start,
+        tdf$interpro_end - tdf$interpro_start,
+        tdf$protein_length - tdf$interpro_end
+      )
+    )
+  }) %>%
+  do.call("rbind", .) -> bin_sizes
+
+# bHLH class color mapping (used across the repository)
+class_colors <- c(
+  "A" = "#7AC36A",
+  "B" = "#F7CB45",
+  "C" = "#9063CD",
+  "D" = "#D83F3D",
+  "E" = "#4C86C6",
+  "NC" = "#cb4289"
+)
+
+bin_sizes$bin <- factor(bin_sizes$bin, levels = c("pre", names(class_colors), "post"))
+bin_sizes$class <- plyr::mapvalues(
+  x = bin_sizes$HGNC.symbol,
+  from = df_classes$HGNC.symbol,
+  to = df_classes$Ledent2002.Simionato2007,
+  warn_missing = FALSE
+)
+
+# PAS domain overlay (IPR000014)
 in_interpro <- p("data", "intermediate", "Metadata_CSVs", "InterPro_Domains_cleaned.csv")
 if (!file.exists(in_interpro)) stop("Missing input: ", in_interpro)
 
-iso <- read.csv(in_iso, stringsAsFactors = FALSE, check.names = FALSE)
-names(iso)[names(iso) == ""] <- "row_id"
-if ("HGNC symbol" %in% names(iso)) iso <- dplyr::rename(iso, HGNC.symbol = `HGNC symbol`)
+ip <- read.csv(in_interpro, check.names = FALSE, stringsAsFactors = FALSE)
+if ("HGNC symbol" %in% names(ip)) ip <- dplyr::rename(ip, HGNC.symbol = `HGNC symbol`)
 
-req_iso <- c("HGNC.symbol", "ensembl_transcript_id", "protein_length", "interpro_start", "interpro_end")
-missing_iso <- setdiff(req_iso, names(iso))
-if (length(missing_iso) > 0) stop("bHLH_StartEnd_withISO.csv missing columns: ", paste(missing_iso, collapse = ", "))
-
-iso <- iso %>%
-  mutate(
-    protein_length = as.numeric(protein_length),
-    bhlh_start = as.numeric(interpro_start),
-    bhlh_end = as.numeric(interpro_end)
-  ) %>%
-  select(HGNC.symbol, ensembl_transcript_id, protein_length, bhlh_start, bhlh_end)
-
-classes <- read_ls_classes()
-class_map <- classes %>% dplyr::select(HGNC.symbol, Ledent2002.Simionato2007) %>% dplyr::distinct()
-
-iso <- iso %>%
-  left_join(class_map, by = "HGNC.symbol") %>%
-  mutate(
-    class = ifelse(is.na(Ledent2002.Simionato2007) | Ledent2002.Simionato2007 == "", "NC", Ledent2002.Simionato2007),
-    class = factor(class, levels = c("A", "B", "C", "D", "E", "NC"))
-  ) %>%
-  select(-Ledent2002.Simionato2007)
-
-# PAS domains (IPR000014) per transcript: keep min start, max end.
-interpro <- read.csv(in_interpro, stringsAsFactors = FALSE, check.names = FALSE)
-names(interpro)[names(interpro) == ""] <- "row_id"
-if ("HGNC symbol" %in% names(interpro)) interpro <- dplyr::rename(interpro, HGNC.symbol = `HGNC symbol`)
-
-req_ip <- c("HGNC.symbol", "ensembl_transcript_id", "interpro", "interpro_start", "interpro_end")
-missing_ip <- setdiff(req_ip, names(interpro))
-if (length(missing_ip) > 0) stop("InterPro_Domains_cleaned.csv missing columns: ", paste(missing_ip, collapse = ", "))
-
-pas <- interpro %>%
+pas_segments <- ip %>%
   filter(interpro == "IPR000014") %>%
-  mutate(
+  transmute(
+    HGNC.symbol = HGNC.symbol,
+    ensembl_transcript_id = ensembl_transcript_id,
     pas_start = as.numeric(interpro_start),
     pas_end = as.numeric(interpro_end)
   ) %>%
   filter(!is.na(ensembl_transcript_id) & is.finite(pas_start) & is.finite(pas_end)) %>%
-  group_by(ensembl_transcript_id) %>%
-  summarise(pas_start = min(pas_start, na.rm = TRUE), pas_end = max(pas_end, na.rm = TRUE), .groups = "drop")
-
-df <- iso %>%
-  left_join(pas, by = "ensembl_transcript_id") %>%
+  group_by(HGNC.symbol, ensembl_transcript_id) %>%
+  summarise(pas_start = min(pas_start), pas_end = max(pas_end), .groups = "drop") %>%
+  left_join(
+    df %>% distinct(HGNC.symbol, ensembl_transcript_id, protein_length),
+    by = c("HGNC.symbol", "ensembl_transcript_id")
+  ) %>%
   mutate(
-    bhlh_rel_start = bhlh_start / protein_length,
-    bhlh_rel_end = bhlh_end / protein_length,
+    protein_length = as.numeric(protein_length),
     pas_rel_start = pas_start / protein_length,
     pas_rel_end = pas_end / protein_length
   ) %>%
-  filter(is.finite(bhlh_rel_start) & is.finite(bhlh_rel_end) & protein_length > 0) %>%
-  filter(bhlh_rel_start >= 0 & bhlh_rel_end <= 1 & bhlh_rel_end >= bhlh_rel_start)
+  filter(is.finite(pas_rel_start) & is.finite(pas_rel_end) & protein_length > 0) %>%
+  filter(pas_rel_start >= 0 & pas_rel_end <= 1 & pas_rel_end >= pas_rel_start) %>%
+  left_join(gene_class_map, by = "HGNC.symbol") %>%
+  mutate(
+    class = ifelse(is.na(Ledent2002.Simionato2007) | Ledent2002.Simionato2007 == "", "NC", Ledent2002.Simionato2007)
+  )
 
-class_colors <- bhlh_class_palette()
 pas_color <- "#FF8C00"
-fill_values <- c(class_colors, "PAS domain" = pas_color)
 
-make_plot <- function(class_name) {
-  d <- df %>% filter(class == class_name)
-  if (nrow(d) == 0) return(NULL)
+split(bin_sizes, bin_sizes$class) %>%
+  lapply(function(pdata) {
+    pdata_len <- pdata %>%
+      group_by(HGNC.symbol, ensembl_transcript_id) %>%
+      summarise(len = sum(size), .groups = "drop")
 
-  # Order transcripts within each gene by decreasing length.
-  d <- d %>%
-    group_by(HGNC.symbol) %>%
-    arrange(desc(protein_length), ensembl_transcript_id, .by_group = TRUE) %>%
-    ungroup()
+    cls <- unique(pdata$class)
+    if (length(cls) != 1) stop("Expected a single class per split() group, found: ", paste(cls, collapse = ", "))
 
-  # Use a global factor to support geom_rect y placement with facets.
-  d <- d %>% mutate(row_label = factor(ensembl_transcript_id, levels = rev(unique(ensembl_transcript_id))))
+    pas_cls <- pas_segments %>% filter(class == cls)
 
-  # One row per transcript for length dot.
-  d_len <- d %>%
-    distinct(HGNC.symbol, ensembl_transcript_id, protein_length, row_label)
+    ggplot(pdata, aes(y = ensembl_transcript_id, x = size, fill = bin)) +
+      geom_bar(
+        color = "black",
+        linewidth = 0.25,
+        stat = "identity",
+        position = position_fill(reverse = TRUE),
+        show.legend = FALSE
+      ) +
+      # PAS overlay: drawn on the same 0-1 scale produced by position_fill().
+      geom_segment(
+        data = pas_cls,
+        inherit.aes = FALSE,
+        aes(
+          x = pas_rel_start,
+          xend = pas_rel_end,
+          y = ensembl_transcript_id,
+          yend = ensembl_transcript_id
+        ),
+        color = pas_color,
+        linewidth = 2.2,
+        alpha = 0.85,
+        lineend = "butt"
+      ) +
+      geom_point(
+        data = pdata_len,
+        inherit.aes = TRUE,
+        mapping = aes(fill = NULL, color = len, size = len, x = 1.05)
+      ) +
+      geom_text(
+        data = pdata_len,
+        show.legend = FALSE,
+        size = 2,
+        inherit.aes = TRUE,
+        mapping = aes(fill = NULL, label = len, x = 1.1)
+      ) +
+      scale_size_continuous(range = c(1, 3)) +
+      scale_color_viridis_c(option = "turbo") +
+      scale_fill_manual(values = c("pre" = "lightgrey", "post" = "lightgrey", class_colors), guide = guide_none()) +
+      facet_grid(
+        rows = vars(HGNC.symbol),
+        space = "free",
+        scales = "free",
+        switch = "y"
+      ) +
+      scale_x_continuous(
+        breaks = c(0, 0.25, 0.5, 0.75, 1, 1.1),
+        labels = c(0, "25%", "50%", "75%", "100%", "Transcript\nlength (aa)"),
+        expand = expansion(mult = c(0, 0.05))
+      ) +
+      scale_y_discrete(expand = expansion(mult = c(0, 0))) +
+      theme(
+        strip.placement = "outside",
+        panel.spacing.y = unit(0.3, "lines"),
+        panel.background = element_blank(),
+        panel.border = element_rect(fill = NA, color = "black"),
+        strip.text.y.left = element_text(angle = 0, hjust = 1, vjust = 0.5)
+      ) +
+      labs(
+        title = paste0("bHLH isoform plots with PAS overlay (Class ", cls, ")"),
+        subtitle = "Orange segment: PAS domain (IPR000014), when present",
+        fill = "Gene class",
+        x = "Relative position of bHLH/PAS domains",
+        y = "Transcript ID",
+        color = "Transcript\nlength (aa)",
+        size = "Transcript\nlength (aa)"
+      )
+  }) -> plots_transcripts_human
 
-  g <- ggplot(d, aes(y = row_label)) +
-    geom_segment(aes(x = 0, xend = 1, yend = row_label), color = "gray85", linewidth = 0.7) +
-    # bHLH domain in class color
-    geom_rect(
-      aes(
-        xmin = bhlh_rel_start,
-        xmax = bhlh_rel_end,
-        ymin = as.numeric(row_label) - 0.35,
-        ymax = as.numeric(row_label) + 0.35,
-        fill = class
-      ),
-      color = "black", linewidth = 0.2, alpha = 0.95,
-      show.legend = TRUE
-    ) +
-    # PAS overlay (orange), if present
-    geom_rect(
-      data = d %>% filter(is.finite(pas_rel_start) & is.finite(pas_rel_end)) %>%
-        filter(pas_rel_start >= 0 & pas_rel_end <= 1 & pas_rel_end >= pas_rel_start),
-      inherit.aes = FALSE,
-      aes(
-        xmin = pas_rel_start,
-        xmax = pas_rel_end,
-        ymin = as.numeric(row_label) - 0.20,
-        ymax = as.numeric(row_label) + 0.20,
-        fill = "PAS domain"
-      ),
-      color = "black", linewidth = 0.2, alpha = 0.85,
-      show.legend = TRUE
-    ) +
-    # length dot (right side)
-    geom_point(
-      data = d_len,
-      inherit.aes = FALSE,
-      aes(x = 1.05, y = row_label, color = protein_length, size = protein_length),
-      alpha = 0.8
-    ) +
-    geom_text(
-      data = d_len,
-      inherit.aes = FALSE,
-      aes(x = 1.10, y = row_label, label = round(protein_length)),
-      size = 2.0
-    ) +
-    scale_fill_manual(values = fill_values, breaks = c(as.character(class_name), "PAS domain"), drop = TRUE) +
-    scale_color_viridis_c(option = "turbo", name = "Transcript length (aa)") +
-    scale_size_continuous(range = c(1, 3), name = "Transcript length (aa)") +
-    scale_x_continuous(
-      breaks = c(0, 0.25, 0.5, 0.75, 1, 1.10),
-      labels = c("0", "25%", "50%", "75%", "100%", "Transcript\nlength (aa)"),
-      limits = c(0, 1.12),
-      expand = expansion(mult = c(0, 0.02))
-    ) +
-    facet_grid(rows = vars(HGNC.symbol), space = "free", scales = "free", switch = "y") +
-    labs(
-      title = paste0("bHLH domain position across coding isoforms (Class ", class_name, ")"),
-      x = "Relative position of bHLH/PAS domains",
-      y = "Transcript ID",
-      fill = "Feature"
-    ) +
-    theme_minimal(base_size = 11) +
-    theme(
-      strip.placement = "outside",
-      strip.text.y.left = element_text(angle = 0, hjust = 1, face = "bold"),
-      panel.spacing.y = unit(0.25, "lines"),
-      panel.grid.major.y = element_blank(),
-      axis.text.y = element_text(size = 6, face = "bold"),
-      plot.title = element_text(face = "bold", hjust = 0.5),
-      legend.position = "bottom"
-    )
-
-  g
-}
-
-classes_to_plot <- c("A", "B", "C", "D", "E", "NC")
-plots <- lapply(classes_to_plot, make_plot)
-names(plots) <- classes_to_plot
-
-for (cls in classes_to_plot) {
-  g <- plots[[cls]]
-  if (is.null(g)) next
-  out_svg <- file.path(out_dir, paste0("bHLH_human_transcript_class", cls, "_A3_with_PAS.svg"))
-  ggsave(out_svg, plot = g, width = 11.7, height = 16.5, units = "in", dpi = 300)
-  message("Wrote: ", out_svg)
-}
+ggsave(
+  file.path(output_dir, "bHLH_human_transcript_classA_A3_with_PAS.svg"),
+  plot = plots_transcripts_human$A,
+  width = 11.7,
+  height = 16.5,
+  units = "in"
+)
+ggsave(
+  file.path(output_dir, "bHLH_human_transcript_classB_A3_with_PAS.svg"),
+  plot = plots_transcripts_human$B,
+  width = 11.7,
+  height = 16.5,
+  units = "in"
+)
+ggsave(
+  file.path(output_dir, "bHLH_human_transcript_classC_A3_with_PAS.svg"),
+  plot = plots_transcripts_human$C,
+  width = 11.7,
+  height = 16.5,
+  units = "in"
+)
+ggsave(
+  file.path(output_dir, "bHLH_human_transcript_classD_A3_with_PAS.svg"),
+  plot = plots_transcripts_human$D,
+  width = 11.7,
+  height = 16.5,
+  units = "in"
+)
+ggsave(
+  file.path(output_dir, "bHLH_human_transcript_classE_A3_with_PAS.svg"),
+  plot = plots_transcripts_human$E,
+  width = 11.7,
+  height = 16.5,
+  units = "in"
+)
+ggsave(
+  file.path(output_dir, "bHLH_human_transcript_classNC_A3_with_PAS.svg"),
+  plot = plots_transcripts_human$NC,
+  width = 11.7,
+  height = 16.5,
+  units = "in"
+)
 
