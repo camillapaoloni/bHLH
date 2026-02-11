@@ -3,6 +3,7 @@
 .Rapp.history
 .RData
 Rplots.pdf
+docs/
 outputs/
 data/intermediate/
 data/raw/Zoonomia_protaln/*.fa
