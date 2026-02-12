@@ -218,8 +218,10 @@ To biologically validate whether "predicted" vs "projected" domain coordinates p
 It writes local (git-ignored) outputs under:
 
 - `outputs/analysis/domain_conservation_analysis/`
-  - `mismatch/` — prioritized subset of **Type mismatch** genes (close-to-human and multi-species heuristics + MAX rat)
-  - `all/` — all HGNC symbols present in `outputs/reports/mammals_domain_definitions_summary.csv`
+  - `overall_summary.csv` — per-gene metrics (including identity and QC flags)
+  - `mismatch_cells.csv` — all mismatch cells (Ensembl vs TOGA type) for the processed gene set
+  - `meeting_shortlist.csv` — prioritized subset of mismatch genes (close-to-human, multi-species, large deltas, MAX rat)
+  - `genes/<HGNC>/...` — per-gene FASTA + metrics + `report.md`
 
 For each HGNC, the folder contains:
 
@@ -230,8 +232,8 @@ For each HGNC, the folder contains:
 
 Examples:
 
-- Prioritized mismatches: `python scripts/domain_conservation_analysis.py --project-root . --scope mismatch`
-- All genes: `python scripts/domain_conservation_analysis.py --project-root . --scope all`
+- All genes: `python scripts/domain_conservation_analysis.py --project-root . --mode all --clean`
+- Only mismatch genes: `python scripts/domain_conservation_analysis.py --project-root . --mode mismatch --clean`
 
 ### Updated: parallel coordinates (ortholog midpoints across species)
 

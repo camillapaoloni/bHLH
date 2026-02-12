@@ -13,19 +13,22 @@ It extracts bHLH domain sequences from:
 and computes simple pairwise identity metrics via a lightweight global alignment.
 
 Outputs (default):
-  outputs/analysis/domain_conservation_mammals/
-    shortlist.csv
-    shortlist.md
+  outputs/analysis/domain_conservation_analysis/
     overall_summary.csv
-    <HGNC>/
-      mismatch_rows.csv
-      predicted_domains.faa
-      projected_domains.faa
-      all_domains.faa
-      predicted_metrics.csv
-      projected_metrics.csv
-      cross_metrics.csv
-      report.md
+    mismatch_cells.csv
+    mismatch_cells.md
+    meeting_shortlist.csv
+    meeting_shortlist.md
+    genes/
+      <HGNC>/
+        mismatch_rows.csv
+        predicted_domains.faa
+        projected_domains.faa
+        all_domains.faa
+        predicted_metrics.csv
+        projected_metrics.csv
+        cross_metrics.csv
+        report.md
 
 Notes
 -----
@@ -309,35 +312,35 @@ def main() -> int:
         "--outdir",
         default="outputs/analysis/domain_conservation_analysis",
     )
-    ap.add_argument(
-        "--scope",
-        choices=["mismatch", "all"],
-        default="mismatch",
-        help="mismatch: analyze a prioritized subset of mismatch genes (default). all: analyze all HGNC in the summary table.",
-    )
+    ap.add_argument("--mode", choices=["all", "mismatch"], default="all", help="Which genes to process.")
     ap.add_argument("--only", default="", help="Comma-separated HGNC symbols.")
+    ap.add_argument(
+        "--clean",
+        action="store_true",
+        help="Delete existing outputs under outdir before writing new ones (including legacy outdir/all and outdir/mismatch folders).",
+    )
     ap.add_argument(
         "--include-all-mismatches",
         action="store_true",
-        help="Analyze all HGNC with any Type mismatch cell.",
+        help="Meeting shortlist: include all HGNC with any Type mismatch cell.",
     )
     ap.add_argument(
         "--include-pan-mismatches",
         action="store_true",
         default=True,
-        help="Include HGNC with mismatch in pan_troglodytes (default: true).",
+        help="Meeting shortlist: include HGNC with mismatch in pan_troglodytes (default: true).",
     )
     ap.add_argument(
         "--include-max-rat",
         action="store_true",
         default=True,
-        help="Always include MAX mismatch in rattus_norvegicus (default: true).",
+        help="Meeting shortlist: always include MAX mismatch in rattus_norvegicus (default: true).",
     )
     ap.add_argument(
         "--top-delta",
         type=int,
         default=5,
-        help="Also include the top N HGNC by max(delta_start+delta_end) among mismatches.",
+        help="Meeting shortlist: also include the top N HGNC by max(delta_start+delta_end) among mismatches.",
     )
     args = ap.parse_args()
 
@@ -360,114 +363,136 @@ def main() -> int:
 
     df_sum = pd.read_csv(summary_path)
     df_mis = df_sum[df_sum["cell_status"].eq("Type mismatch")].copy()
-    if df_mis.empty and args.scope == "mismatch":
-        raise RuntimeError("No Type mismatch rows found in summary table.")
 
-    selected: set[str] = set()
-    only = [x.strip() for x in args.only.split(",") if x.strip()]
-    if only:
-        selected.update(only)
-    elif args.scope == "all":
-        selected.update(sorted(df_sum["hgnc"].dropna().astype(str).unique()))
-    elif args.include_all_mismatches:
-        selected.update(sorted(df_mis["hgnc"].unique()))
-    else:
+    def mismatch_priority_list() -> list[str]:
+        if df_mis.empty:
+            return []
+        if args.include_all_mismatches:
+            return sorted({x for x in df_mis["hgnc"].dropna().astype(str).unique() if x.strip()})
+        selected_m: set[str] = set()
         if args.include_pan_mismatches:
-            selected.update(sorted(df_mis[df_mis["target_species"].eq("pan_troglodytes")]["hgnc"].unique()))
+            selected_m.update(sorted(df_mis[df_mis["target_species"].eq("pan_troglodytes")]["hgnc"].unique()))
 
         if args.include_max_rat:
             has_max_rat = not df_mis[
                 (df_mis["hgnc"].eq("MAX")) & (df_mis["target_species"].eq("rattus_norvegicus"))
             ].empty
             if has_max_rat:
-                selected.add("MAX")
+                selected_m.add("MAX")
 
         if args.top_delta and args.top_delta > 0:
-            df_mis["delta_total"] = (
-                df_mis["delta_start"].fillna(0).astype(float) + df_mis["delta_end"].fillna(0).astype(float)
+            df_tmp = df_mis.copy()
+            df_tmp["delta_total"] = (
+                df_tmp["delta_start"].fillna(0).astype(float) + df_tmp["delta_end"].fillna(0).astype(float)
             )
             top = (
-                df_mis.groupby("hgnc")["delta_total"]
+                df_tmp.groupby("hgnc")["delta_total"]
                 .max()
                 .sort_values(ascending=False)
                 .head(args.top_delta)
                 .index.tolist()
             )
-            selected.update(top)
+            selected_m.update(top)
 
         # Also include genes with mismatch in >=2 species.
         multi = df_mis.groupby("hgnc").size()
-        selected.update(multi[multi >= 2].index.tolist())
+        selected_m.update(multi[multi >= 2].index.tolist())
+        return sorted({x for x in selected_m if isinstance(x, str) and x.strip()})
+
+    mismatch_selected = mismatch_priority_list()
+
+    selected: set[str] = set()
+    only = [x.strip() for x in args.only.split(",") if x.strip()]
+    if only:
+        selected.update(only)
+    elif args.mode == "mismatch":
+        selected.update(sorted(df_mis["hgnc"].dropna().astype(str).unique()))
+    else:
+        selected.update(sorted(df_sum["hgnc"].dropna().astype(str).unique()))
 
     selected = {x for x in selected if isinstance(x, str) and x.strip()}
     selected_list = sorted(selected)
 
-    outdir = outdir / args.scope
     outdir.mkdir(parents=True, exist_ok=True)
+    genes_dir = outdir / "genes"
+    if args.clean:
+        import shutil
 
-    # ---- Shortlist report ----
-    if args.scope == "mismatch":
-        shortlist_rows = (
-            df_mis[df_mis["hgnc"].isin(selected_list)]
-            .sort_values(["hgnc", "target_species"])
-            .reset_index(drop=True)
-        )
-    else:
-        shortlist_rows = (
-            df_sum[df_sum["hgnc"].isin(selected_list)]
-            .sort_values(["hgnc", "target_species"])
-            .reset_index(drop=True)
-        )
-    shortlist_csv = outdir / "shortlist.csv"
-    shortlist_rows.to_csv(shortlist_csv, index=False)
+        shutil.rmtree(genes_dir, ignore_errors=True)
+        shutil.rmtree(outdir / "all", ignore_errors=True)
+        shutil.rmtree(outdir / "mismatch", ignore_errors=True)
+        for fp in [
+            outdir / "overall_summary.csv",
+            outdir / "mismatch_cells.csv",
+            outdir / "mismatch_cells.md",
+            outdir / "meeting_shortlist.csv",
+            outdir / "meeting_shortlist.md",
+        ]:
+            try:
+                fp.unlink()
+            except FileNotFoundError:
+                pass
+    genes_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write a compact MD view for meeting prep.
-    shortlist_md = outdir / "shortlist.md"
-    with shortlist_md.open("w", encoding="utf-8") as f:
-        f.write(f"# Mammals domain conservation ({args.scope})\n\n")
+    # ---- Mismatch cells (full; restricted to processed gene set) ----
+    mismatch_cells = (
+        df_mis[df_mis["hgnc"].isin(selected_list)]
+        .sort_values(["hgnc", "target_species"])
+        .reset_index(drop=True)
+    )
+    mismatch_cells_csv = outdir / "mismatch_cells.csv"
+    mismatch_cells.to_csv(mismatch_cells_csv, index=False)
+
+    mismatch_cells_md = outdir / "mismatch_cells.md"
+    with mismatch_cells_md.open("w", encoding="utf-8") as f:
+        f.write("# Mammals domain mismatch cells\n\n")
         f.write(f"- Source: `{summary_path.relative_to(root)}`\n")
-        f.write(f"- HGNC selected: {len(selected_list)}\n\n")
-        if args.scope == "mismatch":
-            f.write("## Priority heuristics\n\n")
-            f.write("- Mismatch in *Pan troglodytes* (close to human)\n")
-            f.write("- Mismatch in multiple species\n")
-            f.write("- Large coordinate deltas (delta_start+delta_end)\n")
-            f.write("- User-highlighted: MAX in *Rattus norvegicus*\n\n")
-
-        f.write("## Selected HGNC\n\n")
-        for h in selected_list:
-            if args.scope == "mismatch":
-                pan = not df_mis[(df_mis["hgnc"].eq(h)) & (df_mis["target_species"].eq("pan_troglodytes"))].empty
-                nsp = int(df_mis[df_mis["hgnc"].eq(h)]["target_species"].nunique())
-                dmax = float(
-                    (
-                        df_mis[df_mis["hgnc"].eq(h)]["delta_start"].fillna(0).astype(float)
-                        + df_mis[df_mis["hgnc"].eq(h)]["delta_end"].fillna(0).astype(float)
-                    ).max()
-                )
-                flags = []
-                if pan:
-                    flags.append("pan")
-                if nsp >= 2:
-                    flags.append(f"{nsp} spp")
-                flags.append(f"maxΔ={dmax:.3f}")
-                f.write(f"- **{h}** ({', '.join(flags)})\n")
-            else:
-                statuses = df_sum[df_sum["hgnc"].eq(h)]["cell_status"].value_counts().to_dict()
-                # Keep the line compact.
-                parts = []
-                for k in ["Type mismatch", "TOGA only", "Ensembl only", "Type match"]:
-                    if k in statuses:
-                        parts.append(f"{k.split()[0]}={int(statuses[k])}")
-                f.write(f"- **{h}** ({', '.join(parts)})\n")
-
-        if args.scope == "mismatch":
-            f.write("\n## Rows\n\n")
-            for _, r in shortlist_rows.iterrows():
+        f.write(f"- Genes processed: {len(selected_list)}\n")
+        f.write(f"- Mismatch rows in processed set: {len(mismatch_cells)}\n\n")
+        if mismatch_cells.empty:
+            f.write("No mismatches for the processed gene set.\n")
+        else:
+            for _, r in mismatch_cells.iterrows():
                 f.write(
                     f"- **{r['hgnc']}** | {r['target_species']} — Ensembl: {r['ensembl_types_simple']} vs TOGA: {r['toga_types']} "
                     f"(Δstart={float(r['delta_start']):.3f}, Δend={float(r['delta_end']):.3f})\n"
                 )
+
+    # ---- Meeting shortlist (prioritized subset; restricted to processed gene set) ----
+    meeting_selected = [h for h in mismatch_selected if h in set(selected_list)]
+    meeting_rows = (
+        df_mis[df_mis["hgnc"].isin(meeting_selected)]
+        .sort_values(["hgnc", "target_species"])
+        .reset_index(drop=True)
+    )
+    meeting_csv = outdir / "meeting_shortlist.csv"
+    meeting_rows.to_csv(meeting_csv, index=False)
+
+    meeting_md = outdir / "meeting_shortlist.md"
+    with meeting_md.open("w", encoding="utf-8") as f:
+        f.write("# Mammals domain conservation — meeting shortlist\n\n")
+        f.write(f"- Source: `{summary_path.relative_to(root)}`\n")
+        f.write(f"- Genes processed: {len(selected_list)}\n")
+        f.write(f"- Genes shortlisted: {len(meeting_selected)}\n\n")
+        f.write("Heuristics:\n\n")
+        f.write("- mismatch in *Pan troglodytes*\n")
+        f.write("- mismatch in >=2 species\n")
+        f.write("- top coordinate deltas (delta_start+delta_end)\n")
+        f.write("- always include MAX mismatch in rat (if present)\n\n")
+        for h in meeting_selected:
+            pan = not df_mis[(df_mis["hgnc"].eq(h)) & (df_mis["target_species"].eq("pan_troglodytes"))].empty
+            nsp = int(df_mis[df_mis["hgnc"].eq(h)]["target_species"].nunique())
+            df_h = df_mis[df_mis["hgnc"].eq(h)]
+            dmax = float(
+                (df_h["delta_start"].fillna(0).astype(float) + df_h["delta_end"].fillna(0).astype(float)).max()
+            )
+            flags = []
+            if pan:
+                flags.append("pan")
+            if nsp >= 2:
+                flags.append(f"{nsp} spp")
+            flags.append(f"maxΔ={dmax:.3f}")
+            f.write(f"- **{h}** ({', '.join(flags)})\n")
 
     # ---- Load inputs ----
     df_ens = pd.read_csv(ens_path)
@@ -498,7 +523,7 @@ def main() -> int:
     overall_rows: list[dict[str, object]] = []
 
     for h in selected_list:
-        h_dir = outdir / h
+        h_dir = genes_dir / h
         h_dir.mkdir(parents=True, exist_ok=True)
 
         # Mismatch rows for this HGNC
@@ -819,8 +844,9 @@ def main() -> int:
     ).to_csv(outdir / "overall_summary.csv", index=False)
 
     print(f"Wrote: {outdir}")
-    print(f"- shortlist: {shortlist_csv}")
     print(f"- overall summary: {outdir / 'overall_summary.csv'}")
+    print(f"- mismatch cells: {mismatch_cells_csv}")
+    print(f"- meeting shortlist: {meeting_csv}")
     return 0
 
 

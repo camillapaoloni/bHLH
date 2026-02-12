@@ -31,9 +31,8 @@ This folder contains the project’s main executable scripts (R + Python + shell
 ## Domain conservation follow-up (local analysis)
 
 - `domain_conservation_analysis.py` — extracts domain sequences (predicted vs projected) and computes identity metrics.
-  - outputs are local (git-ignored): `outputs/analysis/domain_conservation_analysis/{mismatch,all}/`
+  - outputs are local (git-ignored): `outputs/analysis/domain_conservation_analysis/` (see `README.md`)
 
 ## Human / isoform plots
 
 Scripts prefixed with `bHLH_human_*` and `isoform_*` are used for human-focused figures (see `README.md`).
-
