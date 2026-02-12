@@ -6,6 +6,7 @@ Rplots.pdf
 docs/
 outputs/
 !outputs/
+outputs/*
 !outputs/orthogroups/
 !outputs/orthogroups/domain_positions_ensembl/
 !outputs/orthogroups/domain_positions_ensembl/*.svg
@@ -26,5 +27,7 @@ outputs/reports/*
 !outputs/reports/ensembl_vs_toga_mammals_report.md
 !outputs/reports/mammals_domain_definitions_summary.csv
 !outputs/reports/mammals_domain_definitions_report.md
+__pycache__/
+*.py[cod]
 data/intermediate/
 data/raw/Zoonomia_protaln/*.fa

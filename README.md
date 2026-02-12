@@ -209,6 +209,30 @@ In this repository:
   - `outputs/orthogroups/domain_definitions_mammals/`
   - `outputs/reports/mammals_domain_definitions_summary.csv`
 
+#### Domain conservation follow-up (meeting/QC)
+
+To biologically validate whether "predicted" vs "projected" domain coordinates point to the *same* bHLH sequence, the script below extracts domain sequences and computes simple pairwise identity metrics:
+
+- `scripts/domain_conservation_analysis.py`
+
+It writes local (git-ignored) outputs under:
+
+- `outputs/analysis/domain_conservation_analysis/`
+  - `mismatch/` — prioritized subset of **Type mismatch** genes (close-to-human and multi-species heuristics + MAX rat)
+  - `all/` — all HGNC symbols present in `outputs/reports/mammals_domain_definitions_summary.csv`
+
+For each HGNC, the folder contains:
+
+- `predicted_domains.faa` — Ensembl/InterProScan-derived domain sequences (from `target_seq` using Start_T/Stop_T)
+- `projected_domains.faa` — Zoonomia-projected domain sequences (from filtered alignments using query_start/query_end)
+- `cross_metrics.csv` — predicted-vs-projected identity (per species; best match per predicted entry)
+- `report.md` — compact per-gene summary for meeting notes
+
+Examples:
+
+- Prioritized mismatches: `python scripts/domain_conservation_analysis.py --project-root . --scope mismatch`
+- All genes: `python scripts/domain_conservation_analysis.py --project-root . --scope all`
+
 ### Updated: parallel coordinates (ortholog midpoints across species)
 
 - `scripts/Parallel_coordinates.r` -> `outputs/orthologs/figures/parallel_coordinates_midpoints.svg`
