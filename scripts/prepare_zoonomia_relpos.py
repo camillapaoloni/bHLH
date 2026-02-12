@@ -31,11 +31,10 @@ The output is intended to be consumed by downstream plotting scripts.
 from __future__ import annotations
 
 import argparse
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 import re
-
-import pandas as pd
 
 
 HEADER_RE = re.compile(r"^>?(.+?)\s*\|\s*PROT\s*\|\s*(REFERENCE|QUERY)\s*$", re.IGNORECASE)
@@ -123,6 +122,27 @@ def parse_fasta_lengths(filtered_alignments_dir: Path) -> dict[LengthKey, dict[s
     return lengths
 
 
+def _to_float(value: str) -> float | None:
+    try:
+        if value is None:
+            return None
+        s = str(value).strip()
+        if s == "":
+            return None
+        return float(s)
+    except Exception:
+        return None
+
+
+def _fmt(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        if value != value:  # NaN
+            return ""
+    return str(value)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -166,41 +186,62 @@ def main() -> int:
     if not fa_dir.exists():
         raise FileNotFoundError(fa_dir)
 
-    df = pd.read_csv(in_path)
-    required = {"HGNC", "ENST", "target_species", "human_start", "human_end", "query_start", "query_end"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(f"Missing required columns in {in_path}: {sorted(missing)}")
+    with in_path.open("r", encoding="utf-8", errors="replace", newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"Empty or invalid CSV: {in_path}")
+        fieldnames = list(reader.fieldnames)
+
+        required = {"HGNC", "ENST", "target_species", "human_start", "human_end", "query_start", "query_end"}
+        missing = required - set(fieldnames)
+        if missing:
+            raise ValueError(f"Missing required columns in {in_path}: {sorted(missing)}")
+
+        rows = list(reader)
 
     lengths = parse_fasta_lengths(fa_dir)
 
-    def lookup_len(row: pd.Series) -> pd.Series:
-        key = LengthKey(enst=str(row["ENST"]).split(".")[0], target_species=str(row["target_species"]))
-        info = lengths.get(key, {})
-        return pd.Series(
-            {
-                "human_length": info.get("human_length", pd.NA),
-                "query_length": info.get("query_length", pd.NA),
-            }
-        )
+    extra_cols = ["human_length", "query_length", "rel_human_start", "rel_human_end", "rel_query_start", "rel_query_end"]
+    out_fieldnames = fieldnames[:]
+    for c in extra_cols:
+        if c not in out_fieldnames:
+            out_fieldnames.append(c)
 
-    df[["human_length", "query_length"]] = df.apply(lookup_len, axis=1)
+    out_rows: list[dict[str, str]] = []
+    for row in rows:
+        enst = str(row.get("ENST", "")).split(".")[0]
+        species = str(row.get("target_species", ""))
+        info = lengths.get(LengthKey(enst=enst, target_species=species), {})
+        human_length = info.get("human_length")
+        query_length = info.get("query_length")
 
-    # Compute relative positions when lengths are available.
-    for col in ["human_start", "human_end", "query_start", "query_end", "human_length", "query_length"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        human_start = _to_float(row.get("human_start", ""))
+        human_end = _to_float(row.get("human_end", ""))
+        query_start = _to_float(row.get("query_start", ""))
+        query_end = _to_float(row.get("query_end", ""))
 
-    df["rel_human_start"] = df["human_start"] / df["human_length"]
-    df["rel_human_end"] = df["human_end"] / df["human_length"]
-    df["rel_query_start"] = df["query_start"] / df["query_length"]
-    df["rel_query_end"] = df["query_end"] / df["query_length"]
+        rel_human_start = (human_start / human_length) if (human_start is not None and human_length) else None
+        rel_human_end = (human_end / human_length) if (human_end is not None and human_length) else None
+        rel_query_start = (query_start / query_length) if (query_start is not None and query_length) else None
+        rel_query_end = (query_end / query_length) if (query_end is not None and query_length) else None
+
+        out_row: dict[str, str] = {k: _fmt(row.get(k, "")) for k in out_fieldnames}
+        out_row["human_length"] = _fmt(human_length)
+        out_row["query_length"] = _fmt(query_length)
+        out_row["rel_human_start"] = _fmt(rel_human_start)
+        out_row["rel_human_end"] = _fmt(rel_human_end)
+        out_row["rel_query_start"] = _fmt(rel_query_start)
+        out_row["rel_query_end"] = _fmt(rel_query_end)
+        out_rows.append(out_row)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(out_path, index=False)
-    print(f"Wrote: {out_path} ({df.shape[0]} rows)")
+    with out_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=out_fieldnames)
+        writer.writeheader()
+        writer.writerows(out_rows)
+    print(f"Wrote: {out_path} ({len(out_rows)} rows)")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

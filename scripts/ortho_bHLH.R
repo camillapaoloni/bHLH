@@ -3,6 +3,7 @@
 suppressPackageStartupMessages({
   library(dplyr)
   library(ggplot2)
+  library(patchwork)
   library(readr)
   library(stringr)
   library(tibble)
@@ -59,6 +60,8 @@ skip_existing <- Sys.getenv("BHLH_SKIP_EXISTING", unset = "1") != "0"
 limit_n <- suppressWarnings(as.integer(Sys.getenv("BHLH_LIMIT", unset = "0")))
 only_hgnc <- Sys.getenv("BHLH_ONLY", unset = "")
 only_hgnc <- if (nzchar(only_hgnc)) str_split(only_hgnc, ",", simplify = TRUE) else character(0)
+plot_ensembl <- Sys.getenv("BHLH_PLOT_ENSEMBL", unset = "1") != "0"
+plot_mammals <- Sys.getenv("BHLH_PLOT_MAMMALS", unset = "1") != "0"
 
 # Consistent phylogenetic ordering used across the project.
 # (This is the 22-species set; the 23rd species in plots is homo_sapiens as the human reference row.)
@@ -157,6 +160,8 @@ ls_classes_path <- p("data", "raw", "LS_classes.csv")
 if (!file.exists(ls_classes_path)) stop("Missing input: ", ls_classes_path)
 
 in_zoo <- p("data", "intermediate", "zoonomia", "Zoonomia_Start_End_final_with_relpos.csv")
+in_zoo_map <- p("data", "intermediate", "zoonomia", "Zoonomia_filtered_orthologs.csv")
+in_toga <- p("data", "intermediate", "orthologs", "TOGA_orthologs_allSpecies.csv")
 
 # ---- Outputs ----
 out_dir_ensembl <- p("outputs", "orthogroups", "domain_positions_ensembl")
@@ -190,6 +195,7 @@ df_ensembl <- df_ensembl_raw %>%
     target_species = as.character(target_species),
     species_label = species_pretty(target_species),
     target_gene_name = if ("target_gene_name" %in% names(df_ensembl_raw)) .data[["target_gene_name"]] else NA_character_,
+    prot_len = if ("Length_target" %in% names(df_ensembl_raw)) suppressWarnings(as.numeric(.data[["Length_target"]])) else NA_real_,
     rel_start = suppressWarnings(as.numeric(.data[["Rel_start_T"]])),
     rel_end = suppressWarnings(as.numeric(.data[["Rel_end_T"]])),
     row_id = paste0("Ensembl:", target_id),
@@ -218,7 +224,52 @@ df_ensembl <- df_ensembl %>%
     gene_class = vapply(hgnc, orthogroup_class, character(1)),
     gene_class = factor(gene_class, levels = c("A", "B", "C", "D", "E", "NC"))
   ) %>%
-  select(hgnc, target_species, row_id, row_label, rel_start, rel_end, gene_class, source)
+  select(hgnc, target_species, row_id, row_label, rel_start, rel_end, prot_len, gene_class, source)
+
+# ---- Load Zoonomia/TOGA map (for Zoonomia row labeling) ----
+# Preferred: join using the full alignment label (`full_enst_label`) to recover the query gene region (q_gene).
+df_zoo_map <- NULL
+if (file.exists(in_zoo_map)) {
+  df_zoo_map_raw <- readr::read_csv(in_zoo_map, show_col_types = FALSE)
+  zoo_map_required <- c("HGNC", "species", "full_enst_label", "q_gene")
+  zoo_map_missing <- setdiff(zoo_map_required, names(df_zoo_map_raw))
+  if (length(zoo_map_missing) == 0) {
+    df_zoo_map <- df_zoo_map_raw %>%
+      transmute(
+        hgnc = .data[["HGNC"]],
+        target_species = as.character(.data[["species"]]),
+        full_enst_label = .data[["full_enst_label"]],
+        q_gene = .data[["q_gene"]]
+      ) %>%
+      filter(!is.na(full_enst_label) & full_enst_label != "") %>%
+      distinct()
+  } else {
+    message("Zoonomia map found but missing columns; falling back to TOGA join. Missing: ",
+            paste(zoo_map_missing, collapse = ", "))
+  }
+}
+
+# Fallback: join via cleaned transcript key (drops the final .<number> suffix) against TOGA orthologs.
+df_toga_map <- NULL
+if (is.null(df_zoo_map) && file.exists(in_toga)) {
+  df_toga_raw <- readr::read_csv(in_toga, show_col_types = FALSE)
+  toga_required <- c("HGNC symbol", "target_species", "q_gene", "q_transcript")
+  toga_missing <- setdiff(toga_required, names(df_toga_raw))
+  if (length(toga_missing) == 0) {
+    df_toga_map <- df_toga_raw %>%
+      transmute(
+        hgnc = .data[["HGNC symbol"]],
+        target_species = as.character(.data[["target_species"]]),
+        transcript_key = stringr::str_replace(.data[["q_transcript"]], "\\.[0-9]+$", ""),
+        q_gene = .data[["q_gene"]]
+      ) %>%
+      filter(!is.na(transcript_key) & transcript_key != "") %>%
+      distinct()
+  } else {
+    message("TOGA file found but missing columns; Zoonomia labels will not include q_gene. Missing: ",
+            paste(toga_missing, collapse = ", "))
+  }
+}
 
 # ---- Human reference row (adds the 23rd species) ----
 df_human_ref <- NULL
@@ -231,12 +282,13 @@ if (all(c("Rel_start_Q", "Rel_end_Q", "query_gene", "HGNC symbol") %in% names(df
       species_label = species_pretty("homo_sapiens"),
       rel_start = suppressWarnings(as.numeric(.data[["Rel_start_Q"]])),
       rel_end = suppressWarnings(as.numeric(.data[["Rel_end_Q"]])),
+      prot_len = if ("Length_query" %in% names(df_ensembl_raw)) suppressWarnings(as.numeric(.data[["Length_query"]])) else NA_real_,
       gene_class = vapply(.data[["HGNC symbol"]], orthogroup_class, character(1)),
       gene_class = factor(gene_class, levels = c("A", "B", "C", "D", "E", "NC")),
       row_id = paste0("Human:", .data[["query_gene"]]),
       row_label = paste0(species_label, " | ", .data[["query_gene"]], " | Human")
     ) %>%
-    select(hgnc, target_species, row_id, row_label, rel_start, rel_end, gene_class, source) %>%
+    select(hgnc, target_species, row_id, row_label, rel_start, rel_end, prot_len, gene_class, source) %>%
     distinct(hgnc, .keep_all = TRUE)
 } else {
   message("Rel_start_Q/Rel_end_Q not found; human reference rows will be skipped.")
@@ -246,10 +298,36 @@ if (all(c("Rel_start_Q", "Rel_end_Q", "query_gene", "HGNC symbol") %in% names(df
 df_zoo <- NULL
 if (use_zoonomia && file.exists(in_zoo)) {
   df_zoo_raw <- readr::read_csv(in_zoo, show_col_types = FALSE)
-  zoo_required <- c("HGNC", "ENST", "target_species", "rel_query_start", "rel_query_end")
+  zoo_required <- c("HGNC", "ENST", "full_enst_label", "target_species", "rel_query_start", "rel_query_end")
   zoo_missing <- setdiff(zoo_required, names(df_zoo_raw))
   if (length(zoo_missing) == 0) {
+    df_zoo_raw <- df_zoo_raw %>%
+      mutate(
+        target_species = as.character(target_species),
+        transcript_key = stringr::str_replace(full_enst_label, "\\.[0-9]+$", "")
+      )
+    if (!is.null(df_zoo_map)) {
+      df_zoo_raw <- df_zoo_raw %>%
+        left_join(
+          df_zoo_map,
+          by = c("HGNC" = "hgnc", "target_species" = "target_species", "full_enst_label" = "full_enst_label")
+        )
+    } else if (!is.null(df_toga_map)) {
+      df_zoo_raw <- df_zoo_raw %>%
+        left_join(
+          df_toga_map,
+          by = c("HGNC" = "hgnc", "target_species" = "target_species", "transcript_key" = "transcript_key")
+        )
+    }
     df_zoo <- df_zoo_raw %>%
+      mutate(
+        label_base = ifelse(!is.na(q_gene) & q_gene != "", q_gene, transcript_key),
+        q_len_num = if ("query_length" %in% names(df_zoo_raw)) suppressWarnings(as.numeric(.data[["query_length"]])) else NA_real_
+      ) %>%
+      group_by(HGNC, target_species, label_base) %>%
+      arrange(desc(q_len_num), .data[["rel_query_start"]], .by_group = TRUE) %>%
+      mutate(label = ifelse(dplyr::n() > 1, paste0(label_base, "#", dplyr::row_number()), label_base)) %>%
+      ungroup() %>%
       mutate(
         source = "Zoonomia",
         hgnc = .data[["HGNC"]],
@@ -257,12 +335,13 @@ if (use_zoonomia && file.exists(in_zoo)) {
         species_label = species_pretty(target_species),
         rel_start = suppressWarnings(as.numeric(.data[["rel_query_start"]])),
         rel_end = suppressWarnings(as.numeric(.data[["rel_query_end"]])),
+        prot_len = q_len_num,
         gene_class = vapply(hgnc, orthogroup_class, character(1)),
         gene_class = factor(gene_class, levels = c("A", "B", "C", "D", "E", "NC")),
-        row_id = paste0("Zoonomia:", .data[["ENST"]], ":", target_species),
-        row_label = paste0(species_label, " | ", .data[["ENST"]], " | Zoonomia")
+        row_id = paste0("Zoonomia:", label, ":", target_species),
+        row_label = paste0(species_label, " | ", label, " | Zoonomia")
       ) %>%
-      select(hgnc, target_species, row_id, row_label, rel_start, rel_end, gene_class, source)
+      select(hgnc, target_species, row_id, row_label, rel_start, rel_end, prot_len, gene_class, source)
   } else {
     message("Zoonomia file found but missing columns; skipping. Missing: ", paste(zoo_missing, collapse = ", "))
   }
@@ -274,7 +353,7 @@ if (use_zoonomia && file.exists(in_zoo)) {
 sanitize_group <- function(df) {
   df %>%
     filter(is.finite(rel_start) & is.finite(rel_end)) %>%
-    filter(rel_start >= 0 & rel_end <= 1 & rel_end >= rel_start)
+    filter(rel_start >= 0 & rel_end <= 1 & rel_end > rel_start)
 }
 
 plot_ensembl_full <- function(df_group, hgnc, out_path) {
@@ -290,7 +369,15 @@ plot_ensembl_full <- function(df_group, hgnc, out_path) {
   gene_class <- unique(as.character(na.omit(df_group$gene_class)))
   gene_class <- if (length(gene_class) == 0) "NC" else gene_class[[1]]
 
-  g <- ggplot(df_group, aes(y = row_label)) +
+  df_len <- df_group %>%
+    select(row_label, prot_len, gene_class) %>%
+    distinct() %>%
+    mutate(
+      prot_len = suppressWarnings(as.numeric(prot_len)),
+      prot_len = ifelse(is.finite(prot_len), prot_len, NA_real_)
+    )
+
+  p_pos <- ggplot(df_group, aes(y = row_label)) +
     geom_segment(aes(x = 0, xend = 1, yend = row_label),
                  color = "gray85", linewidth = 0.7) +
     geom_rect(
@@ -325,9 +412,33 @@ plot_ensembl_full <- function(df_group, hgnc, out_path) {
       legend.position = "right"
     )
 
+  p_len <- ggplot(df_len, aes(y = row_label, x = prot_len, fill = gene_class)) +
+    geom_col(width = 0.7, alpha = 0.85, color = "black", linewidth = 0.15, show.legend = FALSE) +
+    geom_text(
+      data = df_len %>% filter(is.finite(prot_len)),
+      aes(label = round(prot_len)),
+      hjust = -0.15,
+      size = 2.2,
+      color = "gray20",
+      inherit.aes = TRUE
+    ) +
+    scale_fill_manual(values = class_colors, breaks = gene_class, drop = TRUE) +
+    scale_x_continuous(expand = expansion(mult = c(0, 0.20))) +
+    labs(x = "Protein length (aa)", y = NULL) +
+    theme_minimal(base_size = 11) +
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.title = element_blank()
+    )
+
+  g <- p_pos + p_len + plot_layout(widths = c(3, 1))
+
   n_rows <- length(levels(df_group$row_label))
   height_in <- max(4, min(40, 0.12 * n_rows + 1))
-  ggsave(out_path, g, width = 12, height = height_in, units = "in", dpi = 300)
+  ggsave(out_path, g, width = 14, height = height_in, units = "in", dpi = 300)
   invisible(TRUE)
 }
 
@@ -346,6 +457,14 @@ plot_mammals_integrated <- function(df_group, hgnc, out_path) {
   gene_class <- unique(as.character(na.omit(df_group$gene_class)))
   gene_class <- if (length(gene_class) == 0) "NC" else gene_class[[1]]
 
+  df_len <- df_group %>%
+    select(row_label, prot_len, source) %>%
+    distinct() %>%
+    mutate(
+      prot_len = suppressWarnings(as.numeric(prot_len)),
+      prot_len = ifelse(is.finite(prot_len), prot_len, NA_real_)
+    )
+
   # Dummy point to create a single-item class legend in addition to the dataset legend.
   df_class_key <- tibble(
     x = 0.5,
@@ -353,7 +472,7 @@ plot_mammals_integrated <- function(df_group, hgnc, out_path) {
     gene_class = factor(gene_class, levels = c("A", "B", "C", "D", "E", "NC"))
   )
 
-  g <- ggplot(df_group, aes(y = row_label)) +
+  p_pos <- ggplot(df_group, aes(y = row_label)) +
     geom_segment(aes(x = 0, xend = 1, yend = row_label),
                  color = "gray85", linewidth = 0.7) +
     geom_rect(
@@ -397,9 +516,33 @@ plot_mammals_integrated <- function(df_group, hgnc, out_path) {
       legend.position = "right"
     )
 
+  p_len <- ggplot(df_len, aes(y = row_label, x = prot_len, fill = source)) +
+    geom_col(width = 0.7, alpha = 0.85, color = "black", linewidth = 0.15, show.legend = FALSE) +
+    geom_text(
+      data = df_len %>% filter(is.finite(prot_len)),
+      aes(label = round(prot_len)),
+      hjust = -0.15,
+      size = 2.2,
+      color = "gray20",
+      inherit.aes = TRUE
+    ) +
+    scale_fill_manual(values = c(Human = "#999999", Ensembl = "#2b8cbe", Zoonomia = "#f16913")) +
+    scale_x_continuous(expand = expansion(mult = c(0, 0.20))) +
+    labs(x = "Protein length (aa)", y = NULL) +
+    theme_minimal(base_size = 11) +
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.title = element_blank()
+    )
+
+  g <- p_pos + p_len + plot_layout(widths = c(3, 1))
+
   n_rows <- length(levels(df_group$row_label))
   height_in <- max(4, min(40, 0.12 * n_rows + 1))
-  ggsave(out_path, g, width = 12, height = height_in, units = "in", dpi = 300)
+  ggsave(out_path, g, width = 14, height = height_in, units = "in", dpi = 300)
   invisible(TRUE)
 }
 
@@ -414,7 +557,7 @@ message("Output dirs: ", out_dir_ensembl, " | ", out_dir_mammals)
 for (h in hgnc_list) {
   # ---- (A) Ensembl overview (23 species incl. human reference) ----
   out_path_ensembl <- file.path(out_dir_ensembl, paste0("orthogroup_", h, ".svg"))
-  if (!(skip_existing && file.exists(out_path_ensembl))) {
+  if (plot_ensembl && !(skip_existing && file.exists(out_path_ensembl))) {
     df_g1 <- df_ensembl %>%
       filter(hgnc == h) %>%
       filter(target_species %in% phylo_order)
@@ -427,7 +570,7 @@ for (h in hgnc_list) {
 
   # ---- (B) Mammals-only integrated zoom ----
   out_path_mammals <- file.path(out_dir_mammals, paste0("orthogroup_", h, ".svg"))
-  if (!(skip_existing && file.exists(out_path_mammals))) {
+  if (plot_mammals && !(skip_existing && file.exists(out_path_mammals))) {
     df_g2 <- df_ensembl %>%
       filter(hgnc == h) %>%
       filter(target_species %in% zoonomia_mammals)

@@ -175,12 +175,20 @@ The thesis generates per-orthogroup plots where each ortholog is drawn on a 0-1 
   - `outputs/orthogroups/domain_positions_ensembl/orthogroup_<HGNC>.svg`
 - **Mammals-only integrated zoom** (Ensembl + Zoonomia; heterogeneous sources):
   - `outputs/orthogroups/domain_positions_mammals_integrated/orthogroup_<HGNC>.svg`
+- **Mammals-only: two domain definitions (recommended for discrepancy/QC)**:
+  - `outputs/orthogroups/domain_definitions_mammals/orthogroup_<HGNC>.svg`
 
 Recommended entry point:
 
 - `scripts/run_orthogroup_domain_plots.sh`
 
 Species labels are formatted as Latin binomials (e.g., `Homo sapiens`) for readability.
+
+Notes on the mammals plots:
+
+- `domain_positions_mammals_integrated` is a direct merge of Ensembl rows + Zoonomia-projected rows for the mammal subset (can include multiple rows per species).
+- `domain_definitions_mammals` is designed for *interpretability*: for each (HGNC, species) it selects a **single representative** Ensembl "predicted" domain and a **single representative** Zoonomia "projected" domain (when available), plus a small status indicator (Type match/mismatch, Ensembl-only, TOGA-only).
+- Some Zoonomia rows are intentionally dropped when the projected coordinates are invalid (e.g., `NA/Inf`, outside `[0,1]`, or `rel_end == rel_start`).
 
 ### 3.5 Orthology refinement using the Zoonomia Project
 
@@ -192,6 +200,14 @@ In this repository:
   - `notebooks/zoonomia_bHLH_mapping.ipynb` -> `data/intermediate/zoonomia/Zoonomia_Start_End_final.csv`
 - conversion to relative coordinates for plotting:
   - `scripts/prepare_zoonomia_relpos.py` -> `data/intermediate/zoonomia/Zoonomia_Start_End_final_with_relpos.csv`
+- Ensembl vs TOGA/TOGA (mammals) concordance report:
+  - `scripts/report_ensembl_vs_toga_mammals.R`
+  - `outputs/figures/ensembl_vs_toga_mammals_matrix.svg`
+  - `outputs/reports/ensembl_vs_toga_mammals_report.md`
+- Mammals plots contrasting **predicted** vs **projected** domain definitions:
+  - `scripts/plot_mammals_domain_definitions.R`
+  - `outputs/orthogroups/domain_definitions_mammals/`
+  - `outputs/reports/mammals_domain_definitions_summary.csv`
 
 ### Updated: parallel coordinates (ortholog midpoints across species)
 
